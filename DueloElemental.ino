@@ -1,3 +1,5 @@
+#include <TimerOne.h>
+
 const int buttonStartPin = 13;
 const int buttonRedPin = 12;
 const int buttonBluePin = 11;
@@ -9,16 +11,37 @@ const int heartLedPin = 6;
 const int ledRedRGBPin = 5;
 const int ledGreenRGBPin = 3;
 const int ledBlueRGBPin = 4;
+int counter = 0;
+int counter2 = 0;
+int endGame_Timer = 0;
+int endGame_Flag = 0;
 
 const int maxRounds = 10; // Máximo de rondas
+int roundTime = 10; // segundos por ronda
 
 int currentRound = 1;
 bool playing = false;
 int currentColor; // Variable para almacenar el color actual mostrado
 bool buttonStates[3] = {false, false, false}; // Estados de los botones
 
+void timerISR() {
+  if(endGame_Timer == 1)
+  {
+    counter2++;
+    if(counter2 == 250)
+    {
+    endGame_Flag = 1;
+    endGame_Timer = 0;
+    }
+  }
+  counter++;  // Increment the counter every 1ms
+}
+
 void setup() {
   Serial.begin(9600);
+  // Initialize Timer1
+  Timer1.initialize(1000);  // Set a period of 1000 microseconds (1 millisecond)
+  Timer1.attachInterrupt(timerISR);  // Attach the ISR (interrupt service routine)
   pinMode(buttonStartPin, INPUT);
   pinMode(buttonRedPin, INPUT);
   pinMode(buttonBluePin, INPUT);
@@ -41,9 +64,13 @@ void setRGBColor(int red, int green, int blue) {
 void blinkRGB(int red, int green, int blue, int times, int duration) {
   for (int i = 0; i < times; i++) {
     setRGBColor(red, green, blue);
-    delay(duration);
+    endGame_Flag = 0;
+    endGame_Timer = 1;
+    while(endGame_Flag);
     setRGBColor(LOW, LOW, LOW);
-    delay(duration);
+    endGame_Flag = 0;
+    endGame_Timer = 1;
+    while(endGame_Flag);
   }
 }
 
@@ -90,6 +117,11 @@ void endRound(bool success) {
       digitalWrite(heartLedPin, LOW);
     }
   } else {
+    endGame();
+  }
+}
+
+void endGame() {
     // Parpadea en rojo 3 veces
     for (int i = 0; i < 3; i++) {
       setRGBColor(HIGH, LOW, LOW);
@@ -99,7 +131,6 @@ void endRound(bool success) {
     }
     playing = false;
     digitalWrite(heartLedPin, LOW);
-  }
 }
 
 bool isCorrectSelection() {
@@ -119,6 +150,7 @@ void loop() {
   }
 
   if (playing) {
+
     // Leer el estado de los botones
     bool redButton = digitalRead(buttonRedPin) == HIGH;
     bool greenButton = digitalRead(buttonGreenPin) == HIGH;
