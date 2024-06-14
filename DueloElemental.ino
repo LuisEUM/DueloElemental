@@ -116,7 +116,7 @@ void randomColor() {
     case 2: setRGBColor(LOW, HIGH, LOW); break; // Verde
     case 3: setRGBColor(LOW, LOW, HIGH); break; // Azul
     case 4: setRGBColor(HIGH, HIGH, LOW); break; // Amarillo
-    case 5: setRGBColor(HIGH, LOW, HIGH); break; // Morado
+    case 5: setRGBColor(HIGH, LOW, HIGH); break; // Magenta
     case 6: setRGBColor(HIGH, HIGH, HIGH); break; // Blanco
   }
 }
@@ -159,13 +159,15 @@ void celebrateLoss() {
 
 // Función para verificar si la selección es correcta
 bool isCorrectSelection() {
-  if (currentColor == 1 && digitalRead(ledRedPin) == HIGH) return true;
-  if (currentColor == 2 && digitalRead(ledGreenPin) == HIGH) return true;
-  if (currentColor == 3 && digitalRead(ledBluePin) == HIGH) return true;
-  if (currentColor == 4 && digitalRead(ledRedPin) == HIGH && digitalRead(ledGreenPin) == HIGH) return true; // Amarillo
-  if (currentColor == 5 && digitalRead(ledRedPin) == HIGH && digitalRead(ledBluePin) == HIGH) return true; // Morado
-  if (currentColor == 6 && digitalRead(ledRedPin) == HIGH && digitalRead(ledGreenPin) == HIGH && digitalRead(ledBluePin) == HIGH) return true; // Blanco
-  return false;
+  switch (currentColor) {
+    case 1: return digitalRead(buttonBluePin) == LOW; // Azul apaga Rojo
+    case 2: return digitalRead(buttonRedPin) == LOW; // Rojo apaga Verde
+    case 3: return digitalRead(buttonGreenPin) == LOW; // Verde apaga Azul
+    case 4: return digitalRead(buttonGreenPin) == LOW; // Verde apaga Amarillo
+    case 5: return digitalRead(buttonRedPin) == LOW; // Rojo apaga Magenta
+    case 6: return digitalRead(buttonBluePin) == LOW; // Azul apaga Blanco
+    default: return false;
+  }
 }
 
 // Función para finalizar la ronda
