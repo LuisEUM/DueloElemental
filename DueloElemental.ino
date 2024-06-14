@@ -1,79 +1,114 @@
-#include <TimerOne.h>
+#include <TimerOne.h> // Librería para manejar Timer1
 
+// Definición de pines de los botones
 const int buttonStartPin = 13;
-const int buttonRedPin = 12;
-const int buttonBluePin = 11;
-const int buttonGreenPin = 10;
-const int ledRedPin = 9;
-const int ledBluePin = 8;
-const int ledGreenPin = 7;
-const int heartLedPin = 6;
+const int buttonBluePin = 12;
+const int buttonGreenPin = 11;
+const int buttonRedPin = 10;
+
+// Definición de pines de los LEDs RGB
 const int ledRedRGBPin = 5;
 const int ledGreenRGBPin = 3;
 const int ledBlueRGBPin = 4;
-int counter = 0;
-int counter2 = 0;
-int endGame_Timer = 0;
-int endGame_Flag = 0;
 
-const int maxRounds = 10; // Máximo de rondas
-int roundTime = 10; // segundos por ronda
+// Definición de pines de los LEDs unicolor
+const int ledBluePin = 9;
+const int ledRedPin = 8;
+const int ledGreenPin = 7;
+const int ledStarHeartPin = 6; // LED del corazón
 
-int currentRound = 1;
-bool playing = false;
-int currentColor; // Variable para almacenar el color actual mostrado
-bool buttonStates[3] = {false, false, false}; // Estados de los botones
+// Variables de debounce para los botones
+volatile bool debounceRed = false;
+volatile bool debounceGreen = false;
+volatile bool debounceBlue = false;
+volatile bool debounceStart = false;
 
-void timerISR() {
-  if(endGame_Timer == 1)
-  {
-    counter2++;
-    if(counter2 == 250)
-    {
-    endGame_Flag = 1;
-    endGame_Timer = 0;
-    }
-  }
-  counter++;  // Increment the counter every 1ms
-}
+// Estados de los botones
+bool buttonStates[3] = {false, false, false}; // [red, green, blue]
+bool playing = false; // Indica si el juego está en progreso
+bool gameStarted = false; // Indica si el juego ha comenzado
+bool gameLost = false; // Indica si el juego se ha perdido
+
+int currentColor; // Almacena el color actual mostrado por los LEDs RGB
+int roundsWon = 0; // Contador de rondas ganadas
+const int totalRounds = 2; // Total de rondas a jugar
+
+// Temporizador para cada ronda
+unsigned long roundStartTime; // Tiempo de inicio de la ronda
+const unsigned long roundDuration = 5000; // Duración de la ronda en milisegundos (5 segundos)
 
 void setup() {
-  Serial.begin(9600);
-  // Initialize Timer1
-  Timer1.initialize(1000);  // Set a period of 1000 microseconds (1 millisecond)
-  Timer1.attachInterrupt(timerISR);  // Attach the ISR (interrupt service routine)
-  pinMode(buttonStartPin, INPUT);
-  pinMode(buttonRedPin, INPUT);
-  pinMode(buttonBluePin, INPUT);
-  pinMode(buttonGreenPin, INPUT);
-  pinMode(ledRedPin, OUTPUT);
-  pinMode(ledBluePin, OUTPUT);
-  pinMode(ledGreenPin, OUTPUT);
+  Serial.begin(9600);  // Inicializa la consola serie
+
+  // Configuración de pines de entrada para los botones
+  pinMode(buttonStartPin, INPUT_PULLUP);
+  pinMode(buttonBluePin, INPUT_PULLUP);
+  pinMode(buttonGreenPin, INPUT_PULLUP);
+  pinMode(buttonRedPin, INPUT_PULLUP);
+
+  // Configuración de pines de salida para los LEDs RGB
   pinMode(ledRedRGBPin, OUTPUT);
   pinMode(ledGreenRGBPin, OUTPUT);
   pinMode(ledBlueRGBPin, OUTPUT);
-  pinMode(heartLedPin, OUTPUT);
+
+  // Configuración de pines de salida para los LEDs unicolor
+  pinMode(ledBluePin, OUTPUT);
+  pinMode(ledRedPin, OUTPUT);
+  pinMode(ledGreenPin, OUTPUT);
+  pinMode(ledStarHeartPin, OUTPUT);
+
+  // Inicializar todos los LEDs en apagado
+  digitalWrite(ledRedRGBPin, LOW);
+  digitalWrite(ledGreenRGBPin, LOW);
+  digitalWrite(ledBlueRGBPin, LOW);
+
+  digitalWrite(ledBluePin, LOW);
+  digitalWrite(ledRedPin, LOW);
+  digitalWrite(ledGreenPin, LOW);
+  digitalWrite(ledStarHeartPin, LOW);
+
+  // Configurar el temporizador para llamar a la función handleDebounce cada 10 ms
+  Timer1.initialize(10000); // 10 ms
+  Timer1.attachInterrupt(handleDebounce);
+
+  // Inicializar el generador de números aleatorios
+  randomSeed(analogRead(0));
 }
 
+// Función para establecer el color de los LEDs RGB
 void setRGBColor(int red, int green, int blue) {
   digitalWrite(ledRedRGBPin, red);
   digitalWrite(ledGreenRGBPin, green);
   digitalWrite(ledBlueRGBPin, blue);
 }
 
+// Función para establecer el estado de los LEDs unicolor
+void setUnicolorLEDs(int red, int green, int blue) {
+  digitalWrite(ledRedPin, red);
+  digitalWrite(ledGreenPin, green);
+  digitalWrite(ledBluePin, blue);
+}
+
+// Función para establecer el estado del LED del corazón
+void setHeartLED(int state) {
+  digitalWrite(ledStarHeartPin, state);
+}
+
+// Función para hacer parpadear los LEDs RGB y unicolor junto con el LED del corazón
 void blinkRGB(int red, int green, int blue, int times, int duration) {
   for (int i = 0; i < times; i++) {
     setRGBColor(red, green, blue);
-    endGame_Flag = 0;
-    endGame_Timer = 1;
-    while(endGame_Flag);
+    setUnicolorLEDs(red, green, blue);
+    setHeartLED(HIGH);
+    delay(duration);
     setRGBColor(LOW, LOW, LOW);
-    endGame_Flag = 0;
-    endGame_Timer = 1;
-    while(endGame_Flag);
+    setUnicolorLEDs(LOW, LOW, LOW);
+    setHeartLED(LOW);
+    delay(duration);
   }
 }
 
+// Función para seleccionar y mostrar un color aleatorio en los LEDs RGB
 void randomColor() {
   currentColor = random(1, 7); // Colores del 1 al 6
   switch (currentColor) {
@@ -86,55 +121,44 @@ void randomColor() {
   }
 }
 
-void startGame() {
-  playing = true;
-  currentRound = 1;
-  digitalWrite(heartLedPin, HIGH);  // Asegura que el corazón esté encendido
-  blinkRGB(HIGH, HIGH, HIGH, 3, 500); // Parpadea en blanco 3 veces
-  randomColor(); // Selecciona y muestra un color aleatorio
-}
-
-void startRound() {
-  buttonStates[0] = buttonStates[1] = buttonStates[2] = false; // Resetear estados de los botones
-  digitalWrite(ledRedPin, LOW);  // Apagar LEDs unicolor al iniciar una nueva ronda
-  digitalWrite(ledGreenPin, LOW);
-  digitalWrite(ledBluePin, LOW);
-  blinkRGB(HIGH, HIGH, HIGH, 3, 500); // Parpadea en blanco 3 veces
-  randomColor(); // Selecciona y muestra un color aleatorio
-}
-
-void endRound(bool success) {
-  setRGBColor(LOW, LOW, LOW);  // Apagar LED RGB inmediatamente
-  buttonStates[0] = buttonStates[1] = buttonStates[2] = false; // Resetear estados de los botones
-
-  if (success) {
-    blinkRGB(LOW, HIGH, LOW, 3, 250); // Parpadea en verde 3 veces
-    if (currentRound < maxRounds) {
-      currentRound++;
-      startRound(); // Iniciar una nueva ronda
-    } else {
-      playing = false;
-      digitalWrite(heartLedPin, LOW);
-    }
-  } else {
-    endGame();
+// Función para celebrar una victoria
+void celebrateWin() {
+  for (int i = 0; i < 3; i++) {
+    setRGBColor(HIGH, LOW, LOW); // Rojo
+    setUnicolorLEDs(HIGH, LOW, LOW); // Rojo
+    setHeartLED(HIGH);
+    delay(250);
+    setRGBColor(LOW, HIGH, LOW); // Verde
+    setUnicolorLEDs(LOW, HIGH, LOW); // Verde
+    setHeartLED(LOW);
+    delay(250);
+    setRGBColor(LOW, LOW, HIGH); // Azul
+    setUnicolorLEDs(LOW, LOW, HIGH); // Azul
+    setHeartLED(HIGH);
+    delay(250);
   }
+  setRGBColor(LOW, LOW, LOW); // Apagar
+  setUnicolorLEDs(LOW, LOW, LOW); // Apagar
+  setHeartLED(LOW); // Apagar corazón
 }
 
-void endGame() {
-    // Parpadea en rojo 3 veces
-    for (int i = 0; i < 3; i++) {
-      setRGBColor(HIGH, LOW, LOW);
-      delay(250);
-      setRGBColor(LOW, LOW, LOW);
-      delay(250);
-    }
-    playing = false;
-    digitalWrite(heartLedPin, LOW);
+// Función para celebrar una derrota
+void celebrateLoss() {
+  for (int i = 0; i < 3; i++) {
+    setRGBColor(HIGH, HIGH, HIGH); // Blanco (rojo, verde y azul encendidos a la vez)
+    setUnicolorLEDs(HIGH, HIGH, HIGH); // Blanco (rojo, verde y azul encendidos a la vez)
+    setHeartLED(HIGH);
+    delay(250);
+    setRGBColor(LOW, LOW, LOW); // Apagar
+    setUnicolorLEDs(LOW, LOW, LOW); // Apagar
+    setHeartLED(LOW);
+    delay(250);
+  }
+  setHeartLED(LOW); // Asegurarse de que el corazón esté apagado
 }
 
+// Función para verificar si la selección es correcta
 bool isCorrectSelection() {
-  // Verifica si la selección es correcta
   if (currentColor == 1 && digitalRead(ledRedPin) == HIGH) return true;
   if (currentColor == 2 && digitalRead(ledGreenPin) == HIGH) return true;
   if (currentColor == 3 && digitalRead(ledBluePin) == HIGH) return true;
@@ -144,44 +168,160 @@ bool isCorrectSelection() {
   return false;
 }
 
-void loop() {
-  if (!playing && digitalRead(buttonStartPin) == HIGH) {
-    startGame();
+// Función para finalizar la ronda
+void endRound(bool success) {
+  setRGBColor(LOW, LOW, LOW); // Apagar LED RGB inmediatamente
+  setUnicolorLEDs(LOW, LOW, LOW); // Apagar LEDs unicolor inmediatamente
+  if (success) {
+    blinkRGB(LOW, HIGH, LOW, 3, 250); // Parpadea en verde 3 veces
+    roundsWon++;
+    if (roundsWon >= totalRounds) {
+      celebrateWin();
+      playing = false;
+      setHeartLED(LOW); // Apagar el corazón después de la celebración
+    } else {
+      randomColor(); // Continuar con la siguiente ronda
+      roundStartTime = millis(); // Reiniciar el temporizador para la nueva ronda
+    }
+    Serial.println("Correct selection");
+  } else {
+    blinkRGB(HIGH, LOW, LOW, 3, 250); // Parpadea en rojo 3 veces
+    setHeartLED(LOW); // Apagar el corazón si la selección es incorrecta
+    celebrateLoss();
+    playing = false;
+    gameLost = true;
+    Serial.println("Incorrect selection");
   }
+}
 
-  if (playing) {
+// Función para iniciar el juego
+void startGame() {
+  playing = true;
+  gameLost = false; // Resetear el indicador de pérdida al iniciar un nuevo juego
+  roundsWon = 0; // Resetear el contador de rondas ganadas al iniciar un nuevo juego
+  // Apagar todos los LEDs unicolor antes de comenzar el juego
+  setUnicolorLEDs(LOW, LOW, LOW);
+  blinkRGB(HIGH, HIGH, HIGH, 3, 500); // Parpadea en blanco 3 veces
+  setRGBColor(LOW, LOW, LOW); // Asegurarse de que los LEDs RGB estén apagados después del parpadeo
+  randomColor(); // Selecciona y muestra un color aleatorio
+  setHeartLED(HIGH); // Enciende el corazón al iniciar el juego
+  roundStartTime = millis(); // Inicializa el temporizador para la primera ronda
+  Serial.println("Game started");
+}
 
-    // Leer el estado de los botones
-    bool redButton = digitalRead(buttonRedPin) == HIGH;
-    bool greenButton = digitalRead(buttonGreenPin) == HIGH;
-    bool blueButton = digitalRead(buttonBluePin) == HIGH;
+// Función para verificar el estado del botón rojo
+void checkButtonRed() {
+  if (!debounceRed && digitalRead(buttonRedPin) == LOW) {
+    debounceRed = true;
+    buttonStates[0] = !buttonStates[0];
+    digitalWrite(ledRedPin, buttonStates[0]);
+    Serial.print("Red LED state: ");
+    Serial.println(buttonStates[0]);
+  }
+}
 
-    // Controlar los LEDs unicolor como interruptores
-    if (redButton && !buttonStates[0]) {
-      buttonStates[0] = true;
-      digitalWrite(ledRedPin, !digitalRead(ledRedPin));
-    } else if (!redButton) {
-      buttonStates[0] = false;
-    }
+// Función para verificar el estado del botón verde
+void checkButtonGreen() {
+  if (!debounceGreen && digitalRead(buttonGreenPin) == LOW) {
+    debounceGreen = true;
+    buttonStates[1] = !buttonStates[1];
+    digitalWrite(ledGreenPin, buttonStates[1]);
+    Serial.print("Green LED state: ");
+    Serial.println(buttonStates[1]);
+  }
+}
 
-    if (greenButton && !buttonStates[1]) {
-      buttonStates[1] = true;
-      digitalWrite(ledGreenPin, !digitalRead(ledGreenPin));
-    } else if (!greenButton) {
-      buttonStates[1] = false;
-    }
+// Función para verificar el estado del botón azul
+void checkButtonBlue() {
+  if (!debounceBlue && digitalRead(buttonBluePin) == LOW) {
+    debounceBlue = true;
+    buttonStates[2] = !buttonStates[2];
+    digitalWrite(ledBluePin, buttonStates[2]);
+    Serial.print("Blue LED state: ");
+    Serial.println(buttonStates[2]);
+  }
+}
 
-    if (blueButton && !buttonStates[2]) {
-      buttonStates[2] = true;
-      digitalWrite(ledBluePin, !digitalRead(ledBluePin));
-    } else if (!blueButton) {
-      buttonStates[2] = false;
-    }
-
-    // Verificar si el jugador ha presionado el botón de inicio para confirmar su selección
-    if (digitalRead(buttonStartPin) == HIGH) {
+// Función para verificar el estado del botón de inicio
+void checkButtonStart() {
+  if (!debounceStart && digitalRead(buttonStartPin) == LOW) {
+    debounceStart = true;
+    if (!playing) {
+      if (gameLost) { // Si el juego se ha perdido, reiniciar el juego
+        setHeartLED(LOW); // Asegurarse de que el corazón esté apagado antes de reiniciar
+      }
+      startGame();
+    } else {
       bool isCorrect = isCorrectSelection();
       endRound(isCorrect);
+    }
+  }
+}
+
+// Función para manejar el debounce de los botones
+void handleDebounce() {
+  static unsigned long lastDebounceRed = 0;
+  static unsigned long lastDebounceGreen = 0;
+  static unsigned long lastDebounceBlue = 0;
+  static unsigned long lastDebounceStart = 0;
+
+  if (debounceRed) {
+    if (millis() - lastDebounceRed > 50) { // 50 ms debounce time
+      if (digitalRead(buttonRedPin) == HIGH) {
+        debounceRed = false;
+        Serial.println("Red button debounce reset");
+      }
+      lastDebounceRed = millis();
+    }
+  }
+
+  if (debounceGreen) {
+    if (millis() - lastDebounceGreen > 50) { // 50 ms debounce time
+      if (digitalRead(buttonGreenPin) == HIGH) {
+        debounceGreen = false;
+        Serial.println("Green button debounce reset");
+      }
+      lastDebounceGreen = millis();
+    }
+  }
+
+  if (debounceBlue) {
+    if (millis() - lastDebounceBlue > 50) { // 50 ms debounce time
+      if (digitalRead(buttonBluePin) == HIGH) {
+        debounceBlue = false;
+        Serial.println("Blue button debounce reset");
+      }
+      lastDebounceBlue = millis();
+    }
+  }
+
+  if (debounceStart) {
+    if (millis() - lastDebounceStart > 50) { // 50 ms debounce time
+      if (digitalRead(buttonStartPin) == HIGH) {
+        debounceStart = false;
+        Serial.println("Start button debounce reset");
+      }
+      lastDebounceStart = millis();
+    }
+  }
+}
+
+void loop() {
+  if (!playing) {
+    if (digitalRead(buttonStartPin) == LOW) {
+      checkButtonStart();
+    }
+  } else {
+    checkButtonRed();
+    checkButtonGreen();
+    checkButtonBlue();
+    if (digitalRead(buttonStartPin) == LOW) {
+      checkButtonStart();
+    }
+
+    // Verificar si ha pasado el tiempo de la ronda
+    if (millis() - roundStartTime > roundDuration) {
+      endRound(false); // Si ha pasado el tiempo y no se ha seleccionado una respuesta correcta, se pierde la ronda
     }
   }
 }
